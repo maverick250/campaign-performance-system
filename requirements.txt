@@ -1,0 +1,10 @@
+langchain
+langgraph
+langchain-core
+typing-extensions
+python-dotenv
+openai
+serpapi
+langchain-openai
+google-search-results
+tqdm
