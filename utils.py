@@ -19,11 +19,19 @@ def correct_json(json_str: str) -> str:
     Strip ```json fences, balance {} and [] so json.loads won't crash.
     (Same logic as the lengthy version—condensed.)
     """
-    cleaned = re.sub(r'^json\s*', '', json_str.strip(), flags=re.I)
-    for o, c in (('{', '}'), ('[', ']')):
-        diff = cleaned.count(o) - cleaned.count(c)
+    # 1) fence-strip
+    cleaned = json_str.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+    # 2) drop a leading 'json' if present
+    cleaned = re.sub(r'^json\s*', '', cleaned.strip(), flags=re.I)
+
+    # 3) balance braces/brackets
+    for open_c, close_c in (('{', '}'), ('[', ']')):
+        diff = cleaned.count(open_c) - cleaned.count(close_c)
         if diff > 0:
-            cleaned += c * diff
-        while cleaned.count(c) > cleaned.count(o):
+            cleaned += close_c * diff
+        # if too many closing, trim from end
+        while cleaned.count(close_c) > cleaned.count(open_c):
             cleaned = cleaned[:-1]
     return cleaned

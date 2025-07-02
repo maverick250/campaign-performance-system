@@ -5,6 +5,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
 from langchain_core.prompts import PromptTemplate
 from memory import history
+from agents import web_search_agent as web
 
 from utils import init_llm, correct_json
 from agents import (
@@ -31,6 +32,7 @@ def router(state: RouterState) -> Command:
       • performance_insight   – explore campaign KPIs
       • budget_recommender    – suggest new budget split
       • creative_analysis     – analyse ad creatives
+      • web_search            – factual or open-ended questions answerable via the web
       • generic               – greetings or off-topic
 
     Respond ONLY with JSON like: 
@@ -38,23 +40,28 @@ def router(state: RouterState) -> Command:
 
     User Query: {question}
     """
-     # ⬇️ NEW — Runnable sequence replaces deprecated LLMChain
     prompt_tmpl = PromptTemplate.from_template(prompt)
-    #text        = (prompt_tmpl | llm).invoke({"question": state["question"]})
+
     # Pass the last turns so the router can leverage context
     text = (prompt_tmpl | llm).invoke(
         {"question": state["question"], "history": list(history)}
-    )
+    ).content      # plain string
+
+    text = correct_json(text)
+    print("[ROUTER raw]", text)
 
     try:
-        branch = json.loads(correct_json(text))["next"]
+        #branch = json.loads(correct_json(text))["next"]
+        branch = json.loads(text)["next"]
     except Exception:
+        print("Failed to parse router response. Falling back to 'generic'.")
         branch = "generic"
 
     mapping = {
         "performance_insight":  "performance_node",
         "budget_recommender":   "budget_node",
         "creative_analysis":    "creative_node",
+        "web_search":           "search_node",
         "generic":              "generic_node",
     }
     return Command(goto=mapping.get(branch, "generic_node"), update={"branch": branch})
@@ -81,6 +88,17 @@ def creative_node(state: RouterState):
         goto=END
     )
 
+def search_node(state: RouterState):
+    answer = web.run(state["question"])
+    return Command(
+        update={
+            "answer": answer, 
+            "branch": state.get("branch"),
+            "history": list(history)
+        },
+        goto=END,
+    )
+
 def generic_node(state: RouterState):
     answer = generic_bot.run(state["question"])
     return Command(
@@ -99,9 +117,10 @@ def build_graph():
     g.add_node("performance_node", performance_node)
     g.add_node("budget_node",      budget_node)
     g.add_node("creative_node",    creative_node)
+    g.add_node("search_node",      search_node)
     g.add_node("generic_node",     generic_node)
 
     g.add_edge(START, "router")
-    for leaf in ("performance_node", "budget_node", "creative_node", "generic_node"):
+    for leaf in ("performance_node", "budget_node", "creative_node", "generic_node", "search_node"):
         g.add_edge(leaf, END)
     return g.compile()

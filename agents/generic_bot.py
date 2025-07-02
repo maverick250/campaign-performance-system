@@ -32,4 +32,5 @@ def run(question: str) -> str:
     # ➜ push the new turn into history
     history.append(HumanMessage(content=question))
     history.append(AIMessage(content=ai_msg.content))
+
     return ai_msg

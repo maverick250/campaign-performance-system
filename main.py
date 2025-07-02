@@ -1,4 +1,6 @@
 from orchestrator import build_graph
+from langchain_openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
 
 graph = build_graph()
 
