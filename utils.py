@@ -2,6 +2,8 @@
 import os, re
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from dateparser.search import search_dates
+from datetime import date, datetime
 
 load_dotenv()
 
@@ -35,3 +37,10 @@ def correct_json(json_str: str) -> str:
         while cleaned.count(close_c) > cleaned.count(open_c):
             cleaned = cleaned[:-1]
     return cleaned
+
+def extract_day(text: str) -> str:
+    """Return first date found in text, else today in ISO‐8601."""
+    hits = search_dates(text, settings={"PREFER_DATES_FROM": "past"})
+    if hits:
+        return hits[0][1].date().isoformat()   # hits is [(matched_text, datetime)]
+    return date.today().isoformat()

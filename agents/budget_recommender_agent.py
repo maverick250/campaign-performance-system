@@ -1,5 +1,5 @@
 from langchain_core.prompts import PromptTemplate
-from utils import init_llm
+from utils import init_llm, extract_day
 from datetime import date, datetime
 import dateparser
 
@@ -17,13 +17,6 @@ _db = SQLDatabase.from_uri(
     f"@{os.getenv('SNOWFLAKE_ACCOUNT')}/{os.getenv('SNOWFLAKE_DATABASE')}/"
     f"{os.getenv('SNOWFLAKE_SCHEMA')}?warehouse={os.getenv('SNOWFLAKE_WAREHOUSE')}"
 )
-
-def extract_day(text: str) -> str:
-    """Return first date found in text, else today in ISO‐8601."""
-    hits = search_dates(text, settings={"PREFER_DATES_FROM": "past"})
-    if hits:
-        return hits[0][1].date().isoformat()   # hits is [(matched_text, datetime)]
-    return date.today().isoformat()
 
 def fetch_budget(date_str: str) -> str:
     """Return today’s (or requested) budget rows as CSV‐styled text."""
