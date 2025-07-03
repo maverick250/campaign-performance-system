@@ -9,4 +9,8 @@ langchain-openai
 google-search-results
 tqdm
 langchain-community
+
 snowflake-connector-python
+snowflake-sqlalchemy
+
+dateparser

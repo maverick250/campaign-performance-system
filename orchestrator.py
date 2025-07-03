@@ -5,14 +5,12 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
 from langchain_core.prompts import PromptTemplate
 from memory import history
-from agents import web_search_agent as web
 
 from utils import init_llm, correct_json
 from agents import (
     generic_bot,
-    performance_insight_agent as perf,
+    web_search_agent as web,
     budget_recommender_agent as budget,
-    creative_analysis_agent as creative,
 )
 
 llm = init_llm()
@@ -29,9 +27,7 @@ def router(state: RouterState) -> Command:
     prompt = """
     Route the user query to one of these branches:
 
-      • performance_insight   – explore campaign KPIs
-      • budget_recommender    – suggest new budget split
-      • creative_analysis     – analyse ad creatives
+      • budget_insights       – questions about looking at the company's current budget, marketing spend, ROAS, channels, reallocating budget, daily metrics, proposing a new budget
       • web_search            – factual or open-ended questions answerable via the web
       • generic               – greetings or off-topic
 
@@ -58,34 +54,22 @@ def router(state: RouterState) -> Command:
         branch = "generic"
 
     mapping = {
-        "performance_insight":  "performance_node",
-        "budget_recommender":   "budget_node",
-        "creative_analysis":    "creative_node",
+        "budget_insights":      "budget_node",
         "web_search":           "search_node",
         "generic":              "generic_node",
     }
     return Command(goto=mapping.get(branch, "generic_node"), update={"branch": branch})
 
-# ── Leaf nodes (just call the stub agents) ────────────────────────────────────
-def performance_node(state: RouterState):
-    return Command(
-        update={"answer": perf.run(state["question"]),
-                "branch": state.get("branch")},
-        goto=END
-    )
-
+# ── Leaf nodes ────────────────────────────────────
 def budget_node(state: RouterState):
+    answer = budget.run(state["question"])
     return Command(
-        update={"answer": perf.run(state["question"]),
-                "branch": state.get("branch")},
-        goto=END
-    )
-
-def creative_node(state: RouterState):
-    return Command(
-        update={"answer": perf.run(state["question"]),
-                "branch": state.get("branch")},
-        goto=END
+        update={
+            "answer": answer, 
+            "branch": state.get("branch"),
+            "history": list(history)
+        },
+        goto=END,
     )
 
 def search_node(state: RouterState):
@@ -114,13 +98,11 @@ def generic_node(state: RouterState):
 def build_graph():
     g = StateGraph(RouterState)
     g.add_node("router", router)
-    g.add_node("performance_node", performance_node)
     g.add_node("budget_node",      budget_node)
-    g.add_node("creative_node",    creative_node)
     g.add_node("search_node",      search_node)
     g.add_node("generic_node",     generic_node)
 
     g.add_edge(START, "router")
-    for leaf in ("performance_node", "budget_node", "creative_node", "generic_node", "search_node"):
+    for leaf in ("budget_node", "generic_node", "search_node"):
         g.add_edge(leaf, END)
     return g.compile()
