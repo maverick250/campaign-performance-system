@@ -5,6 +5,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
 from langchain_core.prompts import PromptTemplate
 from memory import history
+from agents.budget_recommender_agent import _write_proposal_to_db
 
 from utils import init_llm, correct_json
 from agents import (
@@ -14,6 +15,19 @@ from agents import (
 )
 
 BUDGET_KEYWORDS = {"spend", "budget", "roas", "channel", "metrics"}
+
+ROUTER_PROMPT = """
+    Route the user query to one of these branches:
+
+      • budget_insights       – questions about looking at the company's current budget, marketing spend, ROAS, channels, reallocating budget, daily metrics, proposing a new budget
+      • web_search            – factual or open-ended questions answerable via the web
+      • generic               – greetings or off-topic
+
+    Respond ONLY with JSON like: 
+    {{"next": "<branch>"}}
+
+    User Query: {question}
+    """
 
 llm = init_llm()
 
@@ -26,22 +40,10 @@ class RouterState(TypedDict):
 
 # ── Router node ───────────────────────────────────────────────────────────────
 def router(state: RouterState) -> Command:
-    prompt = """
-    Route the user query to one of these branches:
-
-      • budget_insights       – questions about looking at the company's current budget, marketing spend, ROAS, channels, reallocating budget, daily metrics, proposing a new budget
-      • web_search            – factual or open-ended questions answerable via the web
-      • generic               – greetings or off-topic
-
-    Respond ONLY with JSON like: 
-    {{"next": "<branch>"}}
-
-    User Query: {question}
-    """
-    prompt_tmpl = PromptTemplate.from_template(prompt)
-
+    prompt_tmpl = PromptTemplate.from_template(ROUTER_PROMPT)
+    
+    # ── Keyword shortcut for budget questions ─────────
     q_lower = state["question"].lower()
-    # 1) keyword shortcut
     if any(k in q_lower for k in BUDGET_KEYWORDS):
         branch = "budget_insights"
     else:

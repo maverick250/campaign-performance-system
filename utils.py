@@ -44,3 +44,4 @@ def extract_day(text: str) -> str:
     if hits:
         return hits[0][1].date().isoformat()   # hits is [(matched_text, datetime)]
     return date.today().isoformat()
+
