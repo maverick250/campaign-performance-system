@@ -39,12 +39,6 @@ shared_memory = ConversationBufferMemory(
     input_key="input",        # 👈  ignore `date_hint`
     output_key="output",      # default in AgentExecutor
 )
-
-#  B)  SEPARATE memory just for the budget agent  (isolated)
-budget_memory = ConversationBufferMemory(
-    memory_key="chat_history",
-    return_messages=True,
-)
 # ───────────────────────────────────────────────────────────
 
 # ── Snowflake connection ────────────────────────────────────────────
@@ -66,7 +60,7 @@ def _fetch(date_str: str) -> str:
     #print(date_str)
     return _db.run(q)
 
-def _write_proposal_to_db(markdown: str):
+def _write_proposal_to_db(budget_date: str, markdown: str):
     """
     Parse a Markdown table like
 
@@ -95,7 +89,7 @@ def _write_proposal_to_db(markdown: str):
         # Escape single quotes inside rationale
         rationale = rationale.replace("'", "''")
         rows.append(
-            f"('{today}', '{channel}', {cur}, {prop}, '{rationale}')"
+            f"('{budget_date}', '{channel}', {cur}, {prop}, '{rationale}')"
         )
 
     if not rows:
@@ -109,6 +103,7 @@ def _write_proposal_to_db(markdown: str):
     _db.run(sql)            # reuse the same SQLDatabase instance
     return True
 
+
 # ── Expose helpers as LangChain tools ───────────────────────────────
 @tool
 def get_budget(day: str) -> str:
@@ -116,13 +111,14 @@ def get_budget(day: str) -> str:
     return _fetch(day)
 
 @tool
-def save_proposal(table_markdown: str) -> str:
+def save_proposal(budget_date: str, table_markdown: str) -> str:
     """
     Persist the previously proposed Markdown table into the database.
     Returns a human-friendly confirmation string.
     """
-    ok = _write_proposal_to_db(table_markdown)
+    ok = _write_proposal_to_db(budget_date, table_markdown)
     return "Saved" if ok else "Nothing written"
+
 
 # ── LLM & prompt ────────────────────────────────────────────────────
 MEMORY = shared_memory
@@ -134,7 +130,7 @@ You are a paid-media analyst.
 
 You have access to two tools:
 • `get_budget(day: str)`: pull channel metrics for the given date.
-• `save_proposal(table_markdown: str)`: save a proposed budget split as a
+• `save_proposal(table_markdown: str)`: save a proposed budget split.
 
 Your instructions: are:
 • Use `get_budget` to pull metrics for the requested day
@@ -144,6 +140,10 @@ Your instructions: are:
 • Ask the user if they're happy with the new proposed budget, and wait for the user to say “apply” / “commit” or any other form of agreement.
   Then call `save_proposal` with the same table.
 • After saving, respond: “✅ New budget split stored.”
+
+• When you call `save_proposal`, pass both:
+    • `budget_date` – the date you fetched
+    • `table_markdown` – the Markdown table you proposed
 """
 
 prompt = ChatPromptTemplate.from_messages(
@@ -179,31 +179,3 @@ def run(question: str) -> str:
     resp: Dict = executor.invoke({"input": question, "date_hint": day})
     return resp["output"]
 
-
-#llm = init_llm()
-
-ANALYSE_PROMPT = PromptTemplate.from_template("""
-You are a helpful budget assistant.
-You are able to pull the budget data from the database and analyse it.  
-                                                                                     
-**Task**
-1. Review the channel-level metrics below.
-2. Re-allocate the given date's spend so total budget stays within ± 5 % of the current total.
-3. Optimise for highest overall ROAS.
-4. Output **only** a Markdown table with columns:
-   | channel | current_spend | proposed_spend | Δ% | brief_rationale |
-          
-Metrics:
-{rows}
-""")
-
-#def run(question: str) -> str:
-#    # 1. Figure out which date to fetch.  For MVP assume “today”.
-#    day  = extract_day(question)           # e.g. "2025-06-28"
-#    #rows = fetch_budget(day)
-#
-#    if not rows:
-#        return f"⚠️ No metrics found for {day}."
-#
-#    # 2. Let the LLM crunch a recommendation
-#    return (ANALYSE_PROMPT | llm).invoke({"rows": rows}).content
