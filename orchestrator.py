@@ -13,6 +13,8 @@ from agents import (
     budget_recommender_agent as budget,
 )
 
+BUDGET_KEYWORDS = {"spend", "budget", "roas", "channel", "metrics"}
+
 llm = init_llm()
 
 # ── State schema ──────────────────────────────────────────────────────────────
@@ -38,20 +40,24 @@ def router(state: RouterState) -> Command:
     """
     prompt_tmpl = PromptTemplate.from_template(prompt)
 
-    # Pass the last turns so the router can leverage context
-    text = (prompt_tmpl | llm).invoke(
-        {"question": state["question"], "history": list(history)}
-    ).content      # plain string
+    q_lower = state["question"].lower()
+    # 1) keyword shortcut
+    if any(k in q_lower for k in BUDGET_KEYWORDS):
+        branch = "budget_insights"
+    else:
+        # Pass the last turns so the router can leverage context
+        text = (prompt_tmpl | llm).invoke(
+            {"question": state["question"], "history": list(history)}
+        ).content      # plain string
 
-    text = correct_json(text)
-    print("[ROUTER raw]", text)
+        text = correct_json(text)
+        print("[ROUTER raw]", text)
 
-    try:
-        #branch = json.loads(correct_json(text))["next"]
-        branch = json.loads(text)["next"]
-    except Exception:
-        print("Failed to parse router response. Falling back to 'generic'.")
-        branch = "generic"
+        try:
+            branch = json.loads(text)["next"]
+        except Exception:
+            print("Failed to parse router response. Falling back to 'generic'.")
+            branch = "generic"
 
     mapping = {
         "budget_insights":      "budget_node",
