@@ -14,3 +14,6 @@ snowflake-connector-python
 snowflake-sqlalchemy
 
 dateparser
+
+fastapi
+uvicorn[standard]

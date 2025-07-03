@@ -5,7 +5,6 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
 from langchain_core.prompts import PromptTemplate
 from memory import history
-from agents.budget_recommender_agent import _write_proposal_to_db
 
 from utils import init_llm, correct_json
 from agents import (

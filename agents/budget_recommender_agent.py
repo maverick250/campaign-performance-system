@@ -6,12 +6,8 @@ Snowflake and (2) write the proposed split back when the user is happy and says
 
 from langchain_core.prompts import PromptTemplate
 from utils import init_llm, extract_day
-from datetime import date, datetime
 from langchain_community.utilities.sql_database import SQLDatabase
-from langchain_openai import OpenAIEmbeddings            # for future RAG
-import os
 from dotenv import load_dotenv
-from textwrap import dedent
 
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
@@ -20,10 +16,13 @@ from typing import List, Dict
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from memory import history 
 
+import httpx
+
 # new
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain.memory import ConversationBufferMemory
 
+#from langchain_openai.agents import create_openai_mcp_agent
 
 load_dotenv()
 
@@ -41,89 +40,9 @@ shared_memory = ConversationBufferMemory(
 )
 # ───────────────────────────────────────────────────────────
 
-# ── Snowflake connection ────────────────────────────────────────────
-_db = SQLDatabase.from_uri(
-    f"snowflake://{os.getenv('SNOWFLAKE_USER')}:{os.getenv('SNOWFLAKE_PASSWORD')}"
-    f"@{os.getenv('SNOWFLAKE_ACCOUNT')}/{os.getenv('SNOWFLAKE_DATABASE')}/"
-    f"{os.getenv('SNOWFLAKE_SCHEMA')}?warehouse={os.getenv('SNOWFLAKE_WAREHOUSE')}"
-)
-
-# ── Low-level helpers ───────────────────────────────────────────────
-def _fetch(date_str: str) -> str:
-    """Return today’s (or requested) budget rows as CSV‐styled text."""
-    q = f"""
-    SELECT channel, spend, clicks, sales
-    FROM METRICS
-    WHERE DATE = '{date_str}'
-    ORDER BY channel;
-    """
-    #print(date_str)
-    return _db.run(q)
-
-def _write_proposal_to_db(budget_date: str, markdown: str):
-    """
-    Parse a Markdown table like
-
-      | channel | current_spend | proposed_spend | Δ% | brief_rationale |
-      |---------|---------------|----------------|----|-----------------|
-      | google  | 100           | 105            | 5% | Good perf       |
-
-    and insert rows into PROPOSED_BUDGETS.
-    """
-    import re, textwrap, html
-    rows = []
-    today = date.today().isoformat()
-
-    for line in markdown.splitlines():
-        if not line.startswith("|"):
-            continue                        # not a table row
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 5:                  # too short
-            continue
-        if cells[0].lower() == "channel":   # header row
-            continue
-        if set(cells[0]) <= {"-"}:          # separator row
-            continue
-
-        channel, cur, prop, _delta, rationale = cells[:5]
-        # Escape single quotes inside rationale
-        rationale = rationale.replace("'", "''")
-        rows.append(
-            f"('{budget_date}', '{channel}', {cur}, {prop}, '{rationale}')"
-        )
-
-    if not rows:
-        return False
-
-    sql = dedent(f"""
-        INSERT INTO PROPOSED_BUDGETS 
-            (proposal_date, channel, current_spend, proposed_spend, rationale)
-        VALUES {", ".join(rows)};
-    """)
-    _db.run(sql)            # reuse the same SQLDatabase instance
-    return True
-
-
-# ── Expose helpers as LangChain tools ───────────────────────────────
-@tool
-def get_budget(day: str) -> str:
-    """Return channel metrics for the given ISO date (YYYY-MM-DD)."""
-    return _fetch(day)
-
-@tool
-def save_proposal(budget_date: str, table_markdown: str) -> str:
-    """
-    Persist the previously proposed Markdown table into the database.
-    Returns a human-friendly confirmation string.
-    """
-    ok = _write_proposal_to_db(budget_date, table_markdown)
-    return "Saved" if ok else "Nothing written"
-
 
 # ── LLM & prompt ────────────────────────────────────────────────────
 MEMORY = shared_memory
-
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 SYSTEM_PROMPT = """
 You are a paid-media analyst.
@@ -158,10 +77,37 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
+MCP_BASE = "http://localhost:9000/mcp"
+
+@tool
+def get_budget(day: str) -> str:
+    """Return channel metrics for the given ISO date (YYYY-MM-DD)."""
+    r = httpx.post(f"{MCP_BASE}/get_budget/invoke",
+                   json={"arguments": {"day": day}},
+                   timeout=15)
+    r.raise_for_status()
+    return r.json()["result"]
+
+@tool
+def save_proposal(budget_date: str, table_markdown: str) -> str:
+    """Persist a proposed budget split."""
+    r = httpx.post(
+        f"{MCP_BASE}/save_proposal/invoke",
+        json={"arguments": {
+            "budget_date": budget_date,
+            "table_markdown": table_markdown,
+        }},
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json()["result"]
+
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
 functions_agent = create_openai_functions_agent(
     llm=llm,
     tools=[get_budget, save_proposal],
-    prompt=prompt
+    prompt=prompt,
 )
 
 executor = AgentExecutor(
