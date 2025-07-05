@@ -4,6 +4,7 @@ from fastapi import FastAPI, APIRouter, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import uvicorn
+import inspect
 
 load_dotenv()
 
@@ -20,15 +21,21 @@ def register_tool_pkg(mod):
     run_fn = mod.run
 
     @mcp.get(schema_route)
-    def schema():
+    async def schema():
         return args_model.schema()
 
     @mcp.post(invoke_route)
-    def invoke(payload: dict):
+    async def invoke(payload: dict):
         if "arguments" not in payload:
             raise HTTPException(422, detail="Missing 'arguments'")
         args = args_model(**payload["arguments"])
-        return {"result": run_fn(**args.dict())}
+        result = run_fn(**args.dict())
+
+        # if the tool returned a coroutine, await it
+        if inspect.iscoroutine(result):
+            result = await result
+
+        return {"result": result}
 
     print(f"Registered MCP tool: {name}")
 

@@ -79,6 +79,7 @@ prompt = ChatPromptTemplate.from_messages(
 
 MCP_BASE = "http://localhost:9000/mcp"
 
+
 @tool
 def get_budget(day: str) -> str:
     """Return channel metrics for the given ISO date (YYYY-MM-DD)."""

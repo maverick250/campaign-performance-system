@@ -4,6 +4,7 @@ from textwrap import dedent
 from langchain_community.utilities.sql_database import SQLDatabase
 import os
 from dotenv import load_dotenv
+import anyio
 
 load_dotenv()
 
@@ -13,7 +14,7 @@ _db = SQLDatabase.from_uri(
     f"{os.getenv('SNOWFLAKE_SCHEMA')}?warehouse={os.getenv('SNOWFLAKE_WAREHOUSE')}"
 )
 
-def fetch_budget(day: str) -> str:
+def fetch_budget_sync(day: str) -> str:
     q = f"""
       SELECT channel, spend, clicks, sales
       FROM METRICS
@@ -22,7 +23,10 @@ def fetch_budget(day: str) -> str:
     """
     return _db.run(q)
 
-def write_proposal(day: str, markdown: str) -> bool:
+async def fetch_budget(day: str) -> str:
+    return await anyio.to_thread.run_sync(fetch_budget_sync, day)
+
+def write_proposal_sync(day: str, markdown: str) -> bool:
     """
     Parse a Markdown table like
 
@@ -62,3 +66,6 @@ def write_proposal(day: str, markdown: str) -> bool:
     """)
     _db.run(sql)            # reuse the same SQLDatabase instance
     return True
+
+async def write_proposal(day: str, markdown: str) -> bool:
+    return await anyio.to_thread.run_sync(write_proposal_sync, day, markdown)
