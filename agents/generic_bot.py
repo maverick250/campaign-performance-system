@@ -33,4 +33,4 @@ def run(question: str) -> str:
     history.append(HumanMessage(content=question))
     history.append(AIMessage(content=ai_msg.content))
 
-    return ai_msg
+    return ai_msg.content

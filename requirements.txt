@@ -17,3 +17,5 @@ dateparser
 
 fastapi
 uvicorn[standard]
+
+streamlit
