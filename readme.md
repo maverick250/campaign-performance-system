@@ -28,7 +28,7 @@ Leverages LangGraph for orchestration, LangChain + OpenAI for LLM routing & func
   - Stateless, load-balanced microservice for tool integrations  
 
 - **Stateful Sessions**  
-  - Per-user context stored in Redis (30-minute TTL)  
+  - Per-user context stored in Redis 
   - Supports simultaneous, separate conversations  
 
 - **Asynchronous I/O**  
